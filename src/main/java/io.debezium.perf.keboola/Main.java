@@ -19,7 +19,6 @@ public class Main {
     public static final Path OFFSET_FILE = Path.of("data/offsets.dat");
     public static final Path SCHEMA_FILE = Path.of("data/schema.dat");
     public static final Path DATABASE_CONFIG = Path.of("conf/database-local.properties");
-    public static final int THREADS_COUNT = 1;
 
     private static Properties loadProps(Path path) throws IOException {
         Properties props = new Properties();
@@ -59,10 +58,21 @@ public class Main {
                 // .with(MySqlConnectorConfig.MAX_QUEUE_SIZE, 40_000)
                 .build();
 
-        var runner = new DebeziumRunner(config, new TestConsumer());
+        var duckDb = new DuckDbWrapper(
+                "data/test.duckdb",
+                "data/duckdb_tmp",
+                1,
+                "2GB",
+                "1GB"
+        );
+        var runner = new DebeziumRunner(
+                config,
+                new TestConsumer(duckDb)
+        );
 
         try {
             runner.runSnapshot();
+            duckDb.close();
         } catch (InterruptedException e) {
             System.err.println("Interrupted while stopping Debezium engine: " + e.getMessage());
         } catch (IOException e) {

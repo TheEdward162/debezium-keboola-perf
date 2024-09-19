@@ -32,5 +32,10 @@
             <artifactId>logback-classic</artifactId>
             <version>${version.logback}</version>
         </dependency>
+        <dependency>
+            <groupId>org.duckdb</groupId>
+            <artifactId>duckdb_jdbc</artifactId>
+            <version>1.0.0</version>
+        </dependency>
     </dependencies>
 </project>
