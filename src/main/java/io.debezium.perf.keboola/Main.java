@@ -59,7 +59,7 @@ public class Main {
                 // .with(MySqlConnectorConfig.MAX_QUEUE_SIZE, 40_000)
                 .build();
 
-        var runner = new DebeziumRunner(config);
+        var runner = new DebeziumRunner(config, new TestConsumer());
 
         try {
             runner.runSnapshot();
