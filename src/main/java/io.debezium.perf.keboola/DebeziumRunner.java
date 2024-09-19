@@ -20,13 +20,9 @@ class DebeziumRunner {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final DebeziumEngine<?> engine;
 
-
-
-    public static class TestConsumer<T> implements DebeziumEngine.ChangeConsumer<ChangeEvent<T, T>> {
-
-
+    public static class TestConsumer implements DebeziumEngine.ChangeConsumer<ChangeEvent<SourceRecord, SourceRecord>> {
         @Override
-        public void handleBatch(List<ChangeEvent<T, T>> records, DebeziumEngine.RecordCommitter<ChangeEvent<T, T>> committer)
+        public void handleBatch(List<ChangeEvent<SourceRecord, SourceRecord>> records, DebeziumEngine.RecordCommitter<ChangeEvent<SourceRecord, SourceRecord>> committer)
                 throws InterruptedException {
             for (var r: records) {
                 committer.markProcessed(r);
@@ -37,10 +33,10 @@ class DebeziumRunner {
 
 
     public DebeziumRunner(Configuration config) {
-        var format = KeyValueHeaderChangeEventFormat.of(Json.class, Json.class, Json.class);
+        var format = KeyValueHeaderChangeEventFormat.of(Connect.class, Connect.class, Connect.class);
         engine = DebeziumEngine.create(format, ConvertingAsyncEngineBuilderFactory.class.getName())
                 .using(config.asProperties())
-                .notifying(new TestConsumer<>())
+                .notifying(new TestConsumer())
                 .build();
     }
 
