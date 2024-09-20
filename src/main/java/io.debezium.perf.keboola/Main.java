@@ -55,15 +55,19 @@ public class Main {
 
         Files.deleteIfExists(Path.of("data/test.duckdb"));
         Files.deleteIfExists(Path.of("data/test.duckdb.wal"));
-        var duckDb = new DuckDbWrapper(
-                "data/test.duckdb",
-                "data/duckdb_tmp",
-                1,
-                "2GB",
-                "1GB"
+//        final var duckDb = new DuckDbWrapper(
+//                "data/test.duckdb",
+//                "data/duckdb_tmp",
+//                1,
+//                "2GB",
+//                "1GB"
+//        );
+        Files.deleteIfExists(Path.of("data/csv"));
+        final var csvDb = new CsvDbWrapper(
+                Path.of("data/csv")
         );
-        var consumer = new TestConsumer(duckDb);
-        var runner = new DebeziumRunner(config, consumer);
+        final var consumer = new TestConsumer(csvDb);
+        final var runner = new DebeziumRunner(config, consumer);
 
         try {
             runner.runSnapshot();

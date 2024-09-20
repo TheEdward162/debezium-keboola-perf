@@ -4,29 +4,27 @@ import io.debezium.engine.ChangeEvent;
 import io.debezium.engine.DebeziumEngine;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.source.SourceRecord;
-import org.duckdb.DuckDBAppender;
 
-import java.sql.SQLException;
+import java.io.IOException;
 import java.text.MessageFormat;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static io.debezium.perf.keboola.DuckDbWrapper.appendValue;
 
 public class TestConsumer implements DebeziumEngine.ChangeConsumer<ChangeEvent<SourceRecord, SourceRecord>> {
     private static final SchemaElement ORDER_EVENT = new SchemaElement("int", false, null, null, 1, "kbc__batch_event_order", true);
 
     private record AppenderState(
-            DuckDBAppender appender,
+            CsvDbWrapper.CsvDbAppender appender,
             AtomicInteger sequence
     ) {}
 
-    private final DuckDbWrapper duckDb;
+    private final CsvDbWrapper db;
     private final Map<String, AppenderState> appenders;
-    private AtomicInteger debug;
+    private final AtomicInteger debug;
 
-    public TestConsumer(DuckDbWrapper duckDb) {
-        this.duckDb = duckDb;
+    public TestConsumer(CsvDbWrapper db) {
+        this.db = db;
         this.appenders = new HashMap<>();
         this.debug = new AtomicInteger(0);
     }
@@ -34,7 +32,7 @@ public class TestConsumer implements DebeziumEngine.ChangeConsumer<ChangeEvent<S
     private AppenderState appenderForTable(String tableName, List<SchemaElement> fields) {
         if (!this.appenders.containsKey(tableName)) {
             this.appenders.put(tableName, new AppenderState(
-                    this.duckDb.createTableAppender(tableName, fields),
+                    this.db.createTableAppender(tableName, fields),
                     new AtomicInteger(0)
             ));
         }
@@ -57,10 +55,10 @@ public class TestConsumer implements DebeziumEngine.ChangeConsumer<ChangeEvent<S
             try {
                 appenderState.appender.beginRow();
                 for (int i = 0; i < payload.fields().size(); i += 1) {
-                    appendValue(appenderState.appender, payload.fields().get(i), payload.values().get(i));
+                    appenderState.appender.append(payload.fields().get(i), payload.values().get(i));
                 }
                 appenderState.appender.endRow();
-            } catch (SQLException e) {
+            } catch (IOException e) {
                 throw new RuntimeException(e);
             }
             committer.markProcessed(r);
@@ -70,7 +68,7 @@ public class TestConsumer implements DebeziumEngine.ChangeConsumer<ChangeEvent<S
             for (final var state : this.appenders.values()) {
                 state.appender.flush();
             }
-        } catch (SQLException e) {
+        } catch (IOException e) {
             throw new RuntimeException(e);
         }
         System.err.println(MessageFormat.format("Seen total of {0} records", this.debug.addAndGet(records.size())));
@@ -83,10 +81,10 @@ public class TestConsumer implements DebeziumEngine.ChangeConsumer<ChangeEvent<S
                 state.appender.flush();
                 state.appender.close();
             }
-        } catch (SQLException e) {
+        } catch (IOException e) {
             throw new RuntimeException(e);
         }
-        this.duckDb.close();
+        this.db.close();
     }
 
     private static String extractTableName(Struct value) {
