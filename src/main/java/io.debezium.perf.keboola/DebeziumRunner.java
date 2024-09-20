@@ -35,6 +35,8 @@ class DebeziumRunner {
 
     public void runSnapshot() throws InterruptedException, IOException {
         start();
+        // TODO: this triggers once the Engine stops sending records, but there are still batches that are in-flight
+        //  and those get lost if we .close engine
         StateMonitor.STATE.awaitSnapshotCompleted();
         stop();
     }
@@ -42,9 +44,9 @@ class DebeziumRunner {
     public void stop() throws IOException {
         try {
             System.out.println(">> Stopping Debezium engine");
-            engine.close();
             executor.shutdown();
             executor.awaitTermination(10, TimeUnit.SECONDS);
+            engine.close(); // basically a hack to only call close 10 seconds after the engine stops sending records :shrug:
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

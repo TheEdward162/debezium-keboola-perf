@@ -1,13 +1,8 @@
 package io.debezium.perf.keboola;
 
 import io.debezium.config.Configuration;
-import io.debezium.connector.binlog.BinlogConnectorConfig;
-import io.debezium.connector.mysql.MySqlConnector;
 import io.debezium.connector.mysql.MySqlConnectorConfig;
 import io.debezium.embedded.EmbeddedEngineConfig;
-import io.debezium.embedded.async.AsyncEmbeddedEngine;
-import io.debezium.storage.file.history.FileSchemaHistory;
-import org.apache.kafka.connect.storage.FileOffsetBackingStore;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -58,6 +53,8 @@ public class Main {
                 // .with(MySqlConnectorConfig.MAX_QUEUE_SIZE, 40_000)
                 .build();
 
+        Files.deleteIfExists(Path.of("data/test.duckdb"));
+        Files.deleteIfExists(Path.of("data/test.duckdb.wal"));
         var duckDb = new DuckDbWrapper(
                 "data/test.duckdb",
                 "data/duckdb_tmp",
@@ -65,19 +62,17 @@ public class Main {
                 "2GB",
                 "1GB"
         );
-        var runner = new DebeziumRunner(
-                config,
-                new TestConsumer(duckDb)
-        );
+        var consumer = new TestConsumer(duckDb);
+        var runner = new DebeziumRunner(config, consumer);
 
         try {
             runner.runSnapshot();
-            duckDb.close();
         } catch (InterruptedException e) {
             System.err.println("Interrupted while stopping Debezium engine: " + e.getMessage());
         } catch (IOException e) {
             System.err.println("Error stopping Debezium engine: " + e.getMessage());
         }
+        consumer.close();
 
         // done
         var duration = StateMonitor.STATE.getSnapshotDuration();

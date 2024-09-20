@@ -2,43 +2,119 @@ package io.debezium.perf.keboola;
 
 import io.debezium.engine.ChangeEvent;
 import io.debezium.engine.DebeziumEngine;
+import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.duckdb.DuckDBAppender;
 
 import java.sql.SQLException;
-import java.util.List;
-import java.util.Objects;
+import java.text.MessageFormat;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static io.debezium.perf.keboola.DuckDbWrapper.appendValue;
 
 public class TestConsumer implements DebeziumEngine.ChangeConsumer<ChangeEvent<SourceRecord, SourceRecord>> {
+    private static final SchemaElement ORDER_EVENT = new SchemaElement("int", false, null, null, 1, "kbc__batch_event_order", true);
+
+    private record AppenderState(
+            DuckDBAppender appender,
+            AtomicInteger sequence
+    ) {}
+
     private final DuckDbWrapper duckDb;
-    private final DuckDBAppender appender;
+    private final Map<String, AppenderState> appenders;
+    private AtomicInteger debug;
 
     public TestConsumer(DuckDbWrapper duckDb) {
         this.duckDb = duckDb;
-        this.appender = duckDb.createTableAppender("str VARCHAR, num INTEGER", "test_table");
+        this.appenders = new HashMap<>();
+        this.debug = new AtomicInteger(0);
+    }
+
+    private AppenderState appenderForTable(String tableName, List<SchemaElement> fields) {
+        if (!this.appenders.containsKey(tableName)) {
+            this.appenders.put(tableName, new AppenderState(
+                    this.duckDb.createTableAppender(tableName, fields),
+                    new AtomicInteger(0)
+            ));
+        }
+
+        return this.appenders.get(tableName);
     }
 
     @Override
-    public void handleBatch(List<ChangeEvent<SourceRecord, SourceRecord>> records, DebeziumEngine.RecordCommitter<ChangeEvent<SourceRecord, SourceRecord>> committer)
-            throws InterruptedException {
+    public void handleBatch(List<ChangeEvent<SourceRecord, SourceRecord>> records, DebeziumEngine.RecordCommitter<ChangeEvent<SourceRecord, SourceRecord>> committer) throws InterruptedException {
         for (final var r : records) {
-            final var value = Objects.toString(r.value());
+            final var value = (Struct)r.value().value();
+            final var tableName = extractTableName(value);
+
+            final var payload = extractPayload(value);
+
+            payload.fields.add(ORDER_EVENT);
+            final var appenderState = this.appenderForTable(tableName, payload.fields());
+            payload.values.add(appenderState.sequence.getAndIncrement());
+
             try {
-                this.appender.beginRow();
-                this.appender.append("r");
-                this.appender.append(value.length());
-                this.appender.endRow();
+                appenderState.appender.beginRow();
+                for (int i = 0; i < payload.fields().size(); i += 1) {
+                    appendValue(appenderState.appender, payload.fields().get(i), payload.values().get(i));
+                }
+                appenderState.appender.endRow();
             } catch (SQLException e) {
                 throw new RuntimeException(e);
             }
             committer.markProcessed(r);
         }
-        committer.markBatchFinished();
 
         try {
-            this.appender.flush();
+            for (final var state : this.appenders.values()) {
+                state.appender.flush();
+            }
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
+        System.err.println(MessageFormat.format("Seen total of {0} records", this.debug.addAndGet(records.size())));
+        committer.markBatchFinished();
+    }
+
+    public void close() {
+        try {
+            for (var state : this.appenders.values()) {
+                state.appender.flush();
+                state.appender.close();
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+        this.duckDb.close();
+    }
+
+    private static String extractTableName(Struct value) {
+        return value.schema().name(); // .replace(".Value", ""); // used for UNWRAP
+    }
+
+    private record Payload(
+           List<SchemaElement> fields,
+           List<Object> values
+    ) {}
+    private static Payload extractPayload(Struct value) {
+        final var fields = new ArrayList<SchemaElement>();
+        final var values = new ArrayList<Object>();
+
+        for (var f : value.schema().fields()) {
+            final var schema = f.schema();
+            fields.add(new SchemaElement(
+                    schema.type().getName(),
+                    schema.isOptional(),
+                    schema.defaultValue() != null ? schema.defaultValue().toString() : null,
+                    schema.name(),
+                    schema.version(),
+                    f.name(),
+                    false
+            ));
+            values.add(value.get(f));
+        }
+
+        return new Payload(fields, values);
     }
 }
