@@ -25,6 +25,7 @@ On a local M2 macbook, 3 000 000 records, single thread. Only comparable among e
 | ^ + with event order column | 00:00:25.222 | 118943.8 | 0.5855233556987511 |
 | write same data but to a csv | 00:00:16.766 | 178933.6 | 0.8808344942675285 |
 | write same data but to a sqlite | 00:00:22.008 | 136314.1 | 0.6710319433300024 |
+| write to csv, message type JSON | 00:01:33.364 | 32132.3 | 0.15817732510916063 |
 
 DuckDB final size is around 220MB
 CSV final size is about 1.7GB

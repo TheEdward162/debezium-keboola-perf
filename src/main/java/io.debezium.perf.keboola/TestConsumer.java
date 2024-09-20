@@ -1,30 +1,33 @@
 package io.debezium.perf.keboola;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.gson.stream.JsonReader;
 import io.debezium.engine.ChangeEvent;
 import io.debezium.engine.DebeziumEngine;
-import org.apache.kafka.connect.data.Struct;
-import org.apache.kafka.connect.source.SourceRecord;
 
 import java.io.IOException;
-import java.sql.SQLException;
+import java.io.StringReader;
 import java.text.MessageFormat;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 
-public class TestConsumer implements DebeziumEngine.ChangeConsumer<ChangeEvent<SourceRecord, SourceRecord>> {
+public class TestConsumer implements DebeziumEngine.ChangeConsumer<ChangeEvent<String, String>> {
     private static final SchemaElement ORDER_EVENT = new SchemaElement("int", false, null, null, 1, "kbc__batch_event_order", true);
+    private static final Gson GSON = new Gson();
 
     private record AppenderState(
-            SqliteDbWrapper.SqliteDbAppender appender,
+            CsvDbWrapper.CsvDbAppender appender,
             AtomicInteger sequence
     ) {}
 
-    private final SqliteDbWrapper db;
+    private final CsvDbWrapper db;
     private final Map<String, AppenderState> appenders;
     private final AtomicInteger debug;
 
-    public TestConsumer(SqliteDbWrapper db) {
+    public TestConsumer(CsvDbWrapper db) {
         this.db = db;
         this.appenders = new HashMap<>();
         this.debug = new AtomicInteger(0);
@@ -42,24 +45,21 @@ public class TestConsumer implements DebeziumEngine.ChangeConsumer<ChangeEvent<S
     }
 
     @Override
-    public void handleBatch(List<ChangeEvent<SourceRecord, SourceRecord>> records, DebeziumEngine.RecordCommitter<ChangeEvent<SourceRecord, SourceRecord>> committer) throws InterruptedException {
+    public void handleBatch(List<ChangeEvent<String, String>> records, DebeziumEngine.RecordCommitter<ChangeEvent<String, String>> committer) throws InterruptedException {
         for (final var r : records) {
-            final var value = (Struct)r.value().value();
-            final var tableName = extractTableName(value);
+            final var value =  extractRecordValue(r.value());
 
-            final var payload = extractPayload(value);
-
-            payload.fields.add(ORDER_EVENT);
-            final var appenderState = this.appenderForTable(tableName, payload.fields());
-            payload.values.add(appenderState.sequence.getAndIncrement());
+            value.fields.add(ORDER_EVENT);
+            final var appenderState = this.appenderForTable(value.tableName, value.fields());
+            value.values.add(appenderState.sequence.getAndIncrement());
 
             try {
                 appenderState.appender.beginRow();
-                for (int i = 0; i < payload.fields().size(); i += 1) {
-                    appenderState.appender.append(payload.fields().get(i), payload.values().get(i));
+                for (int i = 0; i < value.fields().size(); i += 1) {
+                    appenderState.appender.append(value.fields().get(i), value.values().get(i));
                 }
                 appenderState.appender.endRow();
-            } catch (SQLException e) {
+            } catch (IOException e) {
                 throw new RuntimeException(e);
             }
             committer.markProcessed(r);
@@ -69,7 +69,7 @@ public class TestConsumer implements DebeziumEngine.ChangeConsumer<ChangeEvent<S
             for (final var state : this.appenders.values()) {
                 state.appender.flush();
             }
-        } catch (SQLException e) {
+        } catch (IOException e) {
             throw new RuntimeException(e);
         }
         System.err.println(MessageFormat.format("Seen total of {0} records", this.debug.addAndGet(records.size())));
@@ -82,38 +82,61 @@ public class TestConsumer implements DebeziumEngine.ChangeConsumer<ChangeEvent<S
                 state.appender.flush();
                 state.appender.close();
             }
-        } catch (SQLException e) {
+        } catch (IOException e) {
             throw new RuntimeException(e);
         }
         this.db.close();
     }
 
-    private static String extractTableName(Struct value) {
-        return value.schema().name(); // .replace(".Value", ""); // used for UNWRAP
-    }
-
-    private record Payload(
-           List<SchemaElement> fields,
-           List<Object> values
+    private record RecordValue(
+            String tableName,
+            List<SchemaElement> fields,
+            List<Object> values
     ) {}
-    private static Payload extractPayload(Struct value) {
-        final var fields = new ArrayList<SchemaElement>();
-        final var values = new ArrayList<Object>();
+    private static RecordValue extractRecordValue(String value) {
+        String tableName = "";
+        List<SchemaElement> fields = new ArrayList<>();
+        JsonObject payload = null;
 
-        for (var f : value.schema().fields()) {
-            final var schema = f.schema();
-            fields.add(new SchemaElement(
-                    schema.type().getName(),
-                    schema.isOptional(),
-                    schema.defaultValue() != null ? schema.defaultValue().toString() : null,
-                    schema.name(),
-                    schema.version(),
-                    f.name(),
-                    false
-            ));
-            values.add(value.get(f));
+        JsonReader reader = new JsonReader(new StringReader(value));
+        try {
+            reader.beginObject();
+
+            while (reader.hasNext()) {
+                var nextName = reader.nextName();
+                if ("payload".equals(nextName)) {
+                    payload = JsonParser.parseReader(reader).getAsJsonObject();
+                } else if ("schema".equals(nextName)) {
+                    reader.beginObject();
+                    while (reader.hasNext()) {
+                        nextName = reader.nextName();
+                        if ("name".equals(nextName)) {
+                            tableName = reader.nextString().replace(".Value", "");
+                        } else if ("fields".equals(nextName)) {
+                            reader.beginArray();
+                            while (reader.hasNext()) {
+                                fields.add(GSON.fromJson(reader, SchemaElement.class));
+                            }
+                            reader.endArray();
+                        } else {
+                            reader.skipValue(); // ignore other fields
+                        }
+                    }
+                    reader.endObject();
+                } else {
+                    reader.skipValue(); // ignore other fields
+                }
+            }
+            reader.endObject();
+            reader.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
 
-        return new Payload(fields, values);
+        final var values = new ArrayList<>();
+        for (final var f : fields) {
+            values.add(Objects.requireNonNull(payload).get(f.field()));
+        }
+        return new RecordValue(tableName, fields, values);
     }
 }

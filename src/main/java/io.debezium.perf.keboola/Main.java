@@ -62,11 +62,26 @@ public class Main {
 //                "2GB",
 //                "1GB"
 //        );
-        Files.deleteIfExists(Path.of("data/test.sqlite"));
-        final var sqliteDb = new SqliteDbWrapper(
-                Path.of("data/test.sqlite")
+
+
+        try {
+            // if it's stupid but it works...
+            final var path = Path.of("data/csv");
+            for (final var f : Files.list(path).toList()) {
+                Files.delete(f);
+            }
+            Files.delete(path);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        final var csvDb = new CsvDbWrapper(
+                Path.of("data/csv")
         );
-        final var consumer = new TestConsumer(sqliteDb);
+//        Files.deleteIfExists(Path.of("data/test.sqlite"));
+//        final var sqliteDb = new SqliteDbWrapper(
+//                Path.of("data/test.sqlite")
+//        );
+        final var consumer = new TestConsumer(csvDb);
         final var runner = new DebeziumRunner(config, consumer);
 
         try {

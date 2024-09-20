@@ -20,8 +20,8 @@ class DebeziumRunner {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final DebeziumEngine<?> engine;
 
-    public DebeziumRunner(Configuration config, DebeziumEngine.ChangeConsumer<ChangeEvent<SourceRecord, SourceRecord>> consumer) {
-        var format = KeyValueHeaderChangeEventFormat.of(Connect.class, Connect.class, Connect.class);
+    public DebeziumRunner(Configuration config, DebeziumEngine.ChangeConsumer<ChangeEvent<String, String>> consumer) {
+        var format = KeyValueHeaderChangeEventFormat.of(Json.class, Json.class, Json.class);
         engine = DebeziumEngine.create(format, ConvertingAsyncEngineBuilderFactory.class.getName())
                 .using(config.asProperties())
                 .notifying(consumer)
