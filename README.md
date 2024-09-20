@@ -24,3 +24,8 @@ On a local M2 macbook, 3 000 000 records, single thread. Only comparable among e
 | ^ + write real data | 00:00:25.020 | 119904.1 | 0.5902506141054735 |
 | ^ + with event order column | 00:00:25.222 | 118943.8 | 0.5855233556987511 |
 | write same data but to a csv | 00:00:16.766 | 178933.6 | 0.8808344942675285 |
+| write same data but to a sqlite | 00:00:22.008 | 136314.1 | 0.6710319433300024 |
+
+DuckDB final size is around 220MB
+CSV final size is about 1.7GB
+SQLite final size is about 1.5GB

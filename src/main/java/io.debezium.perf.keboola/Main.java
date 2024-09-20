@@ -62,11 +62,11 @@ public class Main {
 //                "2GB",
 //                "1GB"
 //        );
-        Files.deleteIfExists(Path.of("data/csv"));
-        final var csvDb = new CsvDbWrapper(
-                Path.of("data/csv")
+        Files.deleteIfExists(Path.of("data/test.sqlite"));
+        final var sqliteDb = new SqliteDbWrapper(
+                Path.of("data/test.sqlite")
         );
-        final var consumer = new TestConsumer(csvDb);
+        final var consumer = new TestConsumer(sqliteDb);
         final var runner = new DebeziumRunner(config, consumer);
 
         try {

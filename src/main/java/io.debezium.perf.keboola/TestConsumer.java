@@ -6,6 +6,7 @@ import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.source.SourceRecord;
 
 import java.io.IOException;
+import java.sql.SQLException;
 import java.text.MessageFormat;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -15,15 +16,15 @@ public class TestConsumer implements DebeziumEngine.ChangeConsumer<ChangeEvent<S
     private static final SchemaElement ORDER_EVENT = new SchemaElement("int", false, null, null, 1, "kbc__batch_event_order", true);
 
     private record AppenderState(
-            CsvDbWrapper.CsvDbAppender appender,
+            SqliteDbWrapper.SqliteDbAppender appender,
             AtomicInteger sequence
     ) {}
 
-    private final CsvDbWrapper db;
+    private final SqliteDbWrapper db;
     private final Map<String, AppenderState> appenders;
     private final AtomicInteger debug;
 
-    public TestConsumer(CsvDbWrapper db) {
+    public TestConsumer(SqliteDbWrapper db) {
         this.db = db;
         this.appenders = new HashMap<>();
         this.debug = new AtomicInteger(0);
@@ -58,7 +59,7 @@ public class TestConsumer implements DebeziumEngine.ChangeConsumer<ChangeEvent<S
                     appenderState.appender.append(payload.fields().get(i), payload.values().get(i));
                 }
                 appenderState.appender.endRow();
-            } catch (IOException e) {
+            } catch (SQLException e) {
                 throw new RuntimeException(e);
             }
             committer.markProcessed(r);
@@ -68,7 +69,7 @@ public class TestConsumer implements DebeziumEngine.ChangeConsumer<ChangeEvent<S
             for (final var state : this.appenders.values()) {
                 state.appender.flush();
             }
-        } catch (IOException e) {
+        } catch (SQLException e) {
             throw new RuntimeException(e);
         }
         System.err.println(MessageFormat.format("Seen total of {0} records", this.debug.addAndGet(records.size())));
@@ -81,7 +82,7 @@ public class TestConsumer implements DebeziumEngine.ChangeConsumer<ChangeEvent<S
                 state.appender.flush();
                 state.appender.close();
             }
-        } catch (IOException e) {
+        } catch (SQLException e) {
             throw new RuntimeException(e);
         }
         this.db.close();
